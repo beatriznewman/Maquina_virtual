@@ -1,28 +1,35 @@
 .root{
-    -fx-background-color: radial-gradient(focus-distance 0% , center 50% 50% , radius 55% , #3703a6, #111927);
+    -fx-background-color: radial-gradient(
+            focus-distance 0%,
+            center 50% 50%,
+            radius 55%,
+            #ffd6e0,   /* rosa pastel claro */
+            #35bb8c    /* verde-água pastel */
+    );
     -fx-font-family: "Segoe UI";
 }
+
 .text-area {
     -fx-font-family: Consolas;
     -fx-font-size: 15;
-    -fx-text-fill: #ffffff;
+    -fx-text-fill: #4a4a4a; /* cinza suave */
     -fx-display-caret:true;
-
 }
 
 .text-area .content {
-    -fx-background-color: #000000;
+    -fx-background-color: #fff7f9; /* quase branco rosado */
 }
+
 .button {
-    -fx-background-color: #3703a6;
+    -fx-background-color: #f7bfe0;   /* rosa bebê */
     -fx-padding: 8px;
     -fx-background-radius: 12px;
     -fx-font-size: 14px;
-    -fx-text-fill: white;
+    -fx-text-fill: #4a4a4a;          /* cinza suave */
     -fx-font-weight: bold;
 }
 
 .button:hover {
-    -fx-background-color: #a781f8;
+    -fx-background-color: #bcdffb;   /* azul pastel clarinho */
     -fx-cursor: hand;
 }
