@@ -11,9 +11,11 @@ public class VirtualMachine {
     private List<Memoria> memoria;
     private int s; // ponteiro da pilha (topo)
     private String saida;
-    private final int STACK_OFFSET = 100; // Define o início da Pilha (reservamos 0 a 99 para dados)
+    private final int STACK_OFFSET = 100;
 
-    // conjunto de opcodes conhecidos (usado pelo parser)
+    private final boolean DEBUG = true;
+    private final long STEP_LIMIT = 10_000L;
+
     private static final Set<String> OPCODES = Set.of(
             "START","LDC","LDV","STR","ADD","SUB","MULT","DIVI",
             "INV","NEG","AND","OR","CME","CMA","CEQ","CDIF","CMEQ","CMAQ",
@@ -24,9 +26,6 @@ public class VirtualMachine {
         this.path = path;
     }
 
-    // ---------------------------------------------------------
-    // Procura linha pelo rótulo
-    // ---------------------------------------------------------
     private int achaLinha(List<LinhaVM> linhas, String rotulo) {
         if (rotulo == null) return -1;
         rotulo = rotulo.trim();
@@ -37,16 +36,11 @@ public class VirtualMachine {
         return -1;
     }
 
-    // ---------------------------------------------------------
-    // Lê o arquivo e converte para objeto LinhaVM (parser robusto)
-    // ---------------------------------------------------------
     public List<LinhaVM> listaLinhas() {
         List<LinhaVM> linhas = new ArrayList<>();
-
         try {
             File file = new File(path);
             Scanner scanner = new Scanner(file);
-
             int numeroLinha = 1;
             while (scanner.hasNextLine()) {
                 String raw = scanner.nextLine();
@@ -62,38 +56,27 @@ public class VirtualMachine {
                 String var1 = "";
                 String var2 = "";
 
-                // quebra por tabs primeiro (formato com rótulo na primeira coluna)
                 if (raw.contains("\t")) {
-                    // mantém raw para preservar tab separation — mas segura com trim
                     String[] parts = raw.split("\t", 2);
                     rotulo = parts[0].trim();
-
                     if (parts.length == 1 || parts[1].trim().equalsIgnoreCase("NULL")) {
                         instr = "";
                     } else {
                         String resto = parts[1].trim();
                         String[] toks = resto.split("\\s+");
-                        if (toks.length >= 1) {
-                            instr = toks[0].trim().toUpperCase();
-                        }
+                        if (toks.length >= 1) instr = toks[0].trim().toUpperCase();
                         if (toks.length >= 2) var1 = toks[1].trim().replaceAll(",", "");
                         if (toks.length >= 3) var2 = toks[2].trim().replaceAll(",", "");
                     }
                 } else {
-                    // separa por espaços múltiplos
                     String[] parts = line.split("\\s+");
-                    if (parts.length == 0) {
-                        continue;
-                    }
-
-                    // se primeiro token é um opcode conhecido -> é linha sem rótulo
+                    if (parts.length == 0) continue;
                     String first = parts[0].trim().toUpperCase();
                     if (OPCODES.contains(first)) {
                         instr = first;
                         if (parts.length >= 2) var1 = parts[1].trim().replaceAll(",", "");
                         if (parts.length >= 3) var2 = parts[2].trim().replaceAll(",", "");
                     } else {
-                        // primeiro token NÃO é opcode -> pode ser rótulo (por exemplo "1 NULL" ou "1 CALL 2")
                         rotulo = parts[0].trim();
                         if (parts.length == 1) {
                             instr = "";
@@ -106,7 +89,6 @@ public class VirtualMachine {
                                 if (parts.length >= 3) var1 = parts[2].trim().replaceAll(",", "");
                                 if (parts.length >= 4) var2 = parts[3].trim().replaceAll(",", "");
                             } else {
-                                // caso ambíguo: tratar segundo token como instrução (não reconhecida)
                                 instr = second;
                                 if (parts.length >= 3) var1 = parts[2].trim().replaceAll(",", "");
                                 if (parts.length >= 4) var2 = parts[3].trim().replaceAll(",", "");
@@ -119,27 +101,21 @@ public class VirtualMachine {
                 l.setInstrucao(instr == null ? "" : instr);
                 l.setVar1(var1 == null ? "" : var1);
                 l.setVar2(var2 == null ? "" : var2);
-
                 linhas.add(l);
             }
-
             return linhas;
-
         } catch (Exception e) {
             System.out.println("Erro ao ler arquivo: " + e.getMessage());
             return new ArrayList<>();
         }
     }
 
-    // ---------------------------------------------------------
-    // Execução da máquina virtual (com tabela de rótulos)
-    // ---------------------------------------------------------
     public void analisaObj() {
         try {
             saida = "";
             List<LinhaVM> linhas = listaLinhas();
 
-            // --- monta tabela de rótulos (rotulo -> índice na lista) ---
+            // Monta tabela de rótulos
             Map<String, Integer> tabelaRotulos = new HashMap<>();
             for (int k = 0; k < linhas.size(); k++) {
                 String r = linhas.get(k).getRotulo();
@@ -149,19 +125,31 @@ public class VirtualMachine {
             }
 
             memoria = new ArrayList<>();
-            // CORREÇÃO 1: Inicializa a pilha com um offset para não sobrescrever os dados
-            s = STACK_OFFSET - 1; // pilha vazia (o topo está logo abaixo do offset)
+            s = STACK_OFFSET - 1;
+            ensureMemorySize(STACK_OFFSET + 100);
 
-            // Garante que o segmento de dados até o offset esteja inicializado.
-            ensureMemorySize(STACK_OFFSET - 1); 
+            long steps = 0;
+            boolean executando = true;
 
-            for (int i = 0; i < linhas.size(); i++) {
+            for (int i = 0; i < linhas.size() && executando; i++) {
+                if (++steps > STEP_LIMIT) {
+                    System.out.println("Limite de passos excedido (" + STEP_LIMIT + "). Possível loop infinito.");
+                    break;
+                }
+
                 LinhaVM l = linhas.get(i);
                 String op = l.getInstrucao();
                 if (op == null) op = "";
                 op = op.trim().toUpperCase();
 
-                // linha rótulo-only (NULL) => pular (rótulo já registrado na tabela)
+                if (DEBUG) {
+                    System.out.printf("[DEBUG] Linha %d: %s %s %s (s=%d)", i, op, l.getVar1(), l.getVar2(), s);
+                    if (s >= STACK_OFFSET) {
+                        System.out.printf(" topo=%d", memoria.get(s).getValor());
+                    }
+                    System.out.println();
+                }
+
                 if (op.isEmpty()) continue;
 
                 String a = (l.getVar1() == null) ? "" : l.getVar1().trim();
@@ -169,26 +157,24 @@ public class VirtualMachine {
 
                 switch (op) {
                     case "START":
-                        memoria.clear();
+                        // Limpa apenas a pilha, mantém dados
                         s = STACK_OFFSET - 1;
-                        ensureMemorySize(STACK_OFFSET - 1);
                         break;
 
                     case "LDC":
-                        if (!isInteger(a)) { System.out.println("[LDC] arg inválido: " + a); break; }
+                        if (!isInteger(a)) break;
                         push(Integer.parseInt(a));
                         break;
 
                     case "LDV":
-                        if (!isInteger(a)) { System.out.println("[LDV] arg inválido: " + a); break; }
+                        if (!isInteger(a)) break;
                         int addrLDV = Integer.parseInt(a);
                         ensureMemorySize(addrLDV);
                         push(memoria.get(addrLDV).getValor());
                         break;
 
                     case "STR":
-                        // CORREÇÃO 2: Usa pop() e verifica a pilha antes
-                        if (!isInteger(a)) { System.out.println("[STR] arg inválido: " + a); break; }
+                        if (!isInteger(a)) break;
                         if (!checkStackAtLeast(1, "STR")) break;
                         int valSTR = pop();
                         int addrSTR = Integer.parseInt(a);
@@ -199,113 +185,155 @@ public class VirtualMachine {
                     case "ADD": binOp((x,y)->x+y); break;
                     case "SUB": binOp((x,y)->x-y); break;
                     case "MULT": binOp((x,y)->x*y); break;
-                    case "DIVI": binOp((x,y)->{
-                        if (y==0) { System.out.println("[DIVI] divisão por zero"); return 0; }
-                        return x / y;
-                    }); break;
+                    case "DIVI": binOp((x,y)-> y==0 ? 0 : x/y); break;
+                    case "AND": binOp((x,y)->(x==1&&y==1)?1:0); break;
+                    case "OR": binOp((x,y)->(x==1||y==1)?1:0); break;
+                    case "CME": binOp((x,y)-> x<y?1:0); break;
+                    case "CMA": binOp((x,y)-> x>y?1:0); break;
+                    case "CEQ": binOp((x,y)-> x==y?1:0); break;
+                    case "CDIF": binOp((x,y)-> x!=y?1:0); break;
+                    case "CMEQ": binOp((x,y)-> x<=y?1:0); break;
+                    case "CMAQ": binOp((x,y)-> x>=y?1:0); break;
 
                     case "INV":
                         if (!checkStackAtLeast(1,"INV")) break;
                         memoria.set(s, new Memoria(s, -top()));
                         break;
 
-                    case "NEG":
-                        if (!checkStackAtLeast(1,"NEG")) break;
-                        memoria.set(s, new Memoria(s, 1 - top()));
-                        break;
-
-                    case "AND": binOp((x,y)->(x==1&&y==1)?1:0); break;
-                    case "OR": binOp((x,y)->(x==1||y==1)?1:0); break;
-
-                    case "CME":  binOp((x,y)-> x<y?1:0); break;
-                    case "CMA":  binOp((x,y)-> x>y?1:0); break;
-                    case "CEQ":  binOp((x,y)-> x==y?1:0); break;
-                    case "CDIF": binOp((x,y)-> x!=y?1:0); break;
-                    case "CMEQ": binOp((x,y)-> x<=y?1:0); break;
-                    case "CMAQ": binOp((x,y)-> x>=y?1:0); break;
-
                     case "RD": {
-                        // RD permanece o mesmo (lê valor e dá push)
                         TextInputDialog dialog = new TextInputDialog("");
                         dialog.setTitle("Entrada");
                         dialog.setHeaderText("Digite um inteiro:");
                         Optional<String> user = dialog.showAndWait();
-                        int val = Integer.parseInt(user.orElse("0"));
-                        push(val);
+                        if (user.isEmpty()) {
+                            throw new RuntimeException("Entrada cancelada pelo usuário (RD).");
+                        }
+                        try {
+                            int val = Integer.parseInt(user.get().trim());
+                            push(val);
+                        } catch (NumberFormatException ex) {
+                            push(0);
+                        }
                         break;
                     }
 
                     case "PRN":
-                        // CORREÇÃO 3: Usa pop() para desempilhar ao imprimir
                         if (!checkStackAtLeast(1,"PRN")) break;
-                        saida += pop() + "\n";
+                        int valor = pop();
+                        saida += valor + "\n";
+                        System.out.println("SAÍDA: " + valor);
                         break;
 
                     case "JMP": {
                         int destino = tabelaRotulos.getOrDefault(a, -1);
+                        if (destino < 0) destino = achaLinha(linhas, a);
                         if (destino < 0) {
-                            // fallback usando achaLinha (mantém compatibilidade)
-                            destino = achaLinha(linhas, a);
+                            System.out.println("[JMP] rótulo não encontrado: " + a);
+                        } else {
+                            i = destino;
                         }
-                        if (destino < 0) System.out.println("[JMP] rótulo não encontrado: " + a);
-                        else i = destino - 1;
                         break;
                     }
 
                     case "JMPF": {
                         if (!checkStackAtLeast(1,"JMPF")) break;
-                        int val_jmpf = pop(); // Desempilha
+                        int val_jmpf = pop();
                         if (val_jmpf == 0) {
                             int destino = tabelaRotulos.getOrDefault(a, -1);
                             if (destino < 0) destino = achaLinha(linhas, a);
-                            if (destino < 0) System.out.println("[JMPF] rótulo não encontrado: " + a);
-                            else i = destino - 1;
+                            if (destino < 0) {
+                                System.out.println("[JMPF] rótulo não encontrado: " + a);
+                            } else {
+                                i = destino;
+                            }
                         }
                         break;
                     }
 
                     case "ALLOC": {
-                        if (!isInteger(a) || !isInteger(b)) { System.out.println("[ALLOC] args inválidos: " + a + "," + b); break;}
+                        if (!isInteger(a) || !isInteger(b)) break;
                         int addr = Integer.parseInt(a);
                         int qtd = Integer.parseInt(b);
-                        ensureMemorySize(addr + qtd - 1);
-                        for (int j = 0; j < qtd; j++) push(memoria.get(addr + j).getValor());
+                        if (qtd < 0) break;
+                        ensureMemorySize(addr + qtd);
+                        
+                        // CORREÇÃO CRÍTICA: Salva valores atuais na PILHA
+                        for (int j = 0; j < qtd; j++) {
+                            push(memoria.get(addr + j).getValor());
+                        }
+                        // Inicializa com zeros
+                        for (int j = 0; j < qtd; j++) {
+                            memoria.set(addr + j, new Memoria(addr + j, 0));
+                        }
                         break;
                     }
 
                     case "DALLOC": {
-                        if (!isInteger(a) || !isInteger(b)) { System.out.println("[DALLOC] args inválidos: " + a + "," + b); break;}
+                        if (!isInteger(a) || !isInteger(b)) break;
                         int addr = Integer.parseInt(a);
                         int qtd = Integer.parseInt(b);
-                        ensureMemorySize(addr + qtd - 1);
+                        if (qtd < 0) break;
+                        
+                        // CORREÇÃO CRÍTICA: Restaura valores da PILHA (ordem inversa)
                         for (int j = qtd - 1; j >= 0; j--) {
-                            if (!checkStackAtLeast(1,"DALLOC")) break;
-                            memoria.set(addr + j, new Memoria(addr + j, pop())); // Usa pop()
+                            if (!checkStackAtLeast(1, "DALLOC")) break;
+                            int valorRestaurado = pop();
+                            ensureMemorySize(addr + j);
+                            memoria.set(addr + j, new Memoria(addr + j, valorRestaurado));
                         }
                         break;
                     }
 
                     case "CALL": {
+                        // CORREÇÃO: Empilha endereço de retorno
                         push(i + 1);
                         int destino = tabelaRotulos.getOrDefault(a, -1);
                         if (destino < 0) destino = achaLinha(linhas, a);
-                        if (destino < 0) System.out.println("[CALL] rótulo não encontrado: " + a);
-                        else i = destino - 1;
+                        if (destino < 0) {
+                            System.out.println("[CALL] rótulo não encontrado: " + a);
+                            pop(); // Remove endereço inválido
+                        } else {
+                            i = destino; // Vai para o destino
+                        }
                         break;
                     }
 
                     case "RETURN":
-                        if (!checkStackAtLeast(1,"RETURN")) break;
-                        i = pop() - 1;
+                        if (!checkStackAtLeast(1, "RETURN")) {
+                            System.out.println("ERRO CRÍTICO: Pilha vazia no RETURN");
+                            executando = false;
+                            break;
+                        }
+                        int ret = pop();
+                        
+                        // PROTEÇÃO CONTRA LOOP INFINITO
+                        if (ret == i + 1) { // Se retornar para a mesma linha
+                            System.out.println("ERRO: Loop infinito detectado no RETURN");
+                            executando = false;
+                            break;
+                        }
+                        
+                        if (ret < 0 || ret >= linhas.size()) {
+                            System.out.println("ERRO: Endereço de retorno inválido: " + ret);
+                            executando = false;
+                            break;
+                        }
+                        
+                        i = ret - 1;
+                        System.out.println("[RETURN] Retornando de " + i + " para " + ret);
                         break;
-
                     case "HLT":
-                        return;
+                        executando = false;
+                        System.out.println("HLT executado. Steps: " + steps);
+                        break;
 
                     default:
                         System.out.println("Instrução inválida: " + op);
-                } // switch
-            } // for
+                }
+            }
+
+            System.out.println("Execução finalizada. passos=" + steps);
+            System.out.println("Saída final:\n" + saida);
 
         } catch (Exception e) {
             System.out.println("Erro execução: " + e.getMessage());
@@ -313,10 +341,6 @@ public class VirtualMachine {
         }
     }
 
-
-    // ---------------------------------------------------------
-    // Garante que memoria tenha pelo menos (index+1) posições
-    // ---------------------------------------------------------
     private void ensureMemorySize(int index) {
         if (index < 0) return;
         while (memoria.size() <= index) {
@@ -325,20 +349,15 @@ public class VirtualMachine {
         }
     }
 
-    // ---------------------------------------------------------
-    // FUNÇÕES AUXILIARES (push/pop/top/binOp)
-    // ---------------------------------------------------------
     private void push(int v) {
         s++;
-        // Garante que o índice s exista na lista
         ensureMemorySize(s);
-        // Atualiza/Cria a célula de memória no endereço s
         memoria.set(s, new Memoria(s, v));
     }
 
     private int pop() {
         if (s < STACK_OFFSET) {
-            System.out.println("Pop em pilha vazia ou invadindo segmento de dados!");
+            System.out.println("Pop em pilha vazia!");
             return 0;
         }
         int v = memoria.get(s).getValor();
@@ -348,14 +367,14 @@ public class VirtualMachine {
 
     private int top() {
         if (s < STACK_OFFSET) {
-            System.out.println("Top em pilha vazia ou invadindo segmento de dados!");
+            System.out.println("Top em pilha vazia!");
             return 0;
         }
         return memoria.get(s).getValor();
     }
 
     private void binOp(Bin op) {
-        if (!checkStackAtLeast(2,"binOp")) return;
+        if (!checkStackAtLeast(2, "binOp")) return;
         int y = pop();
         int x = pop();
         push(op.apply(x, y));
@@ -369,7 +388,7 @@ public class VirtualMachine {
     }
 
     private boolean checkStackAtLeast(int need, String instr) {
-        int have = s - (STACK_OFFSET - 1); // Calcula o tamanho da pilha com base no offset
+        int have = s - STACK_OFFSET + 1;
         if (have < need) {
             System.out.println("Pilha insuficiente para " + instr + " (precisa " + need + ", tem " + have + ")");
             return false;
@@ -379,7 +398,6 @@ public class VirtualMachine {
 
     private interface Bin { int apply(int x, int y); }
 
-    // ---------------------------------------------------------
     public List<Memoria> getMemoria() { return memoria; }
     public String getSaida() { return saida; }
 }

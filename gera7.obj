@@ -1,0 +1,23 @@
+START
+    ALLOC 0 1        
+    JMP 1            
+2   NULL
+    ALLOC 1 2        
+    RD               
+    STR 1
+    RD              
+    STR 2
+    LDV 1
+    LDV 2
+    ADD              
+    STR 0            
+    DALLOC 1 2
+    RETURN
+3   NULL
+    LDV 0
+    PRN
+    RETURN
+1   NULL
+    CALL 2           
+    CALL 3          
+    HLT
