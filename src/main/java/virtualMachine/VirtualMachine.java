@@ -13,7 +13,7 @@ public class VirtualMachine {
     private String saida;
     private final int STACK_OFFSET = 100;
 
-    private final boolean DEBUG = true;
+    private final boolean DEBUG = false; // Altere para true para ver logs detalhados
     private final long STEP_LIMIT = 10_000L;
 
     private static final Set<String> OPCODES = Set.of(
@@ -41,6 +41,7 @@ public class VirtualMachine {
         try {
             File file = new File(path);
             Scanner scanner = new Scanner(file);
+            try {
             int numeroLinha = 1;
             while (scanner.hasNextLine()) {
                 String raw = scanner.nextLine();
@@ -104,6 +105,9 @@ public class VirtualMachine {
                 linhas.add(l);
             }
             return linhas;
+            } finally {
+                scanner.close();
+            }
         } catch (Exception e) {
             System.out.println("Erro ao ler arquivo: " + e.getMessage());
             return new ArrayList<>();
@@ -197,7 +201,14 @@ public class VirtualMachine {
 
                     case "INV":
                         if (!checkStackAtLeast(1,"INV")) break;
-                        memoria.set(s, new Memoria(s, -top()));
+                        int valINV = pop();
+                        push(-valINV);
+                        break;
+
+                    case "NEG":
+                        if (!checkStackAtLeast(1,"NEG")) break;
+                        int valNEG = pop();
+                        push(valNEG == 0 ? 1 : 0); // Negação lógica
                         break;
 
                     case "RD": {
@@ -225,12 +236,21 @@ public class VirtualMachine {
                         break;
 
                     case "JMP": {
+                        // Primeiro tenta encontrar na tabela de rótulos
                         int destino = tabelaRotulos.getOrDefault(a, -1);
+                        // Se não encontrou, tenta procurar manualmente (pode ser rótulo numérico)
                         if (destino < 0) destino = achaLinha(linhas, a);
+                        // Se ainda não encontrou e é um número, tenta usar como índice direto
+                        if (destino < 0 && isInteger(a)) {
+                            destino = Integer.parseInt(a);
+                            if (destino < 0 || destino >= linhas.size()) {
+                                destino = -1;
+                            }
+                        }
                         if (destino < 0) {
                             System.out.println("[JMP] rótulo não encontrado: " + a);
                         } else {
-                            i = destino;
+                            i = destino - 1; // -1 porque o loop incrementa
                         }
                         break;
                     }
@@ -239,12 +259,21 @@ public class VirtualMachine {
                         if (!checkStackAtLeast(1,"JMPF")) break;
                         int val_jmpf = pop();
                         if (val_jmpf == 0) {
+                            // Primeiro tenta encontrar na tabela de rótulos
                             int destino = tabelaRotulos.getOrDefault(a, -1);
+                            // Se não encontrou, tenta procurar manualmente
                             if (destino < 0) destino = achaLinha(linhas, a);
+                            // Se ainda não encontrou e é um número, tenta usar como índice direto
+                            if (destino < 0 && isInteger(a)) {
+                                destino = Integer.parseInt(a);
+                                if (destino < 0 || destino >= linhas.size()) {
+                                    destino = -1;
+                                }
+                            }
                             if (destino < 0) {
                                 System.out.println("[JMPF] rótulo não encontrado: " + a);
                             } else {
-                                i = destino;
+                                i = destino - 1; // -1 porque o loop incrementa
                             }
                         }
                         break;
@@ -285,15 +314,24 @@ public class VirtualMachine {
                     }
 
                     case "CALL": {
-                        // CORREÇÃO: Empilha endereço de retorno
+                        // Empilha endereço de retorno (linha atual + 1)
                         push(i + 1);
+                        // Primeiro tenta encontrar na tabela de rótulos
                         int destino = tabelaRotulos.getOrDefault(a, -1);
+                        // Se não encontrou, tenta procurar manualmente
                         if (destino < 0) destino = achaLinha(linhas, a);
+                        // Se ainda não encontrou e é um número, tenta usar como índice direto
+                        if (destino < 0 && isInteger(a)) {
+                            destino = Integer.parseInt(a);
+                            if (destino < 0 || destino >= linhas.size()) {
+                                destino = -1;
+                            }
+                        }
                         if (destino < 0) {
                             System.out.println("[CALL] rótulo não encontrado: " + a);
                             pop(); // Remove endereço inválido
                         } else {
-                            i = destino; // Vai para o destino
+                            i = destino - 1; // -1 porque o loop incrementa
                         }
                         break;
                     }
@@ -319,8 +357,10 @@ public class VirtualMachine {
                             break;
                         }
                         
-                        i = ret - 1;
-                        System.out.println("[RETURN] Retornando de " + i + " para " + ret);
+                        i = ret - 1; // -1 porque o loop incrementa
+                        if (DEBUG) {
+                            System.out.println("[RETURN] Retornando para linha " + ret);
+                        }
                         break;
                     case "HLT":
                         executando = false;
