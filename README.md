@@ -26,19 +26,16 @@ Implementação de uma máquina virtual para execução de código objeto compil
 
    **No Git Bash:**
    ```bash
-   cd Maquina_virtual
    ./mvnw javafx:run
    ```
 
    **No CMD/PowerShell (Windows):**
    ```cmd
-   cd Maquina_virtual
    .\mvnw.cmd javafx:run
    ```
 
    **No Linux/Mac:**
    ```bash
-   cd Maquina_virtual
    ./mvnw javafx:run
    ```
 
@@ -89,6 +86,80 @@ Implementação de uma máquina virtual para execução de código objeto compil
 - **O que faz:** Teste completo com múltiplas funções, CALL, ALLOC/DALLOC
 - **Status:** ✅ Teste mais completo e avançado
 
+### 📝 Passo a Passo Detalhado: Testando gera.obj
+
+O arquivo `gera.obj` é o teste mais complexo, envolvendo múltiplas funções aninhadas, chamadas recursivas e gerenciamento de memória. Siga estes passos:
+
+#### **Método 1: Via Interface Gráfica (Recomendado)**
+
+1. **Inicie a aplicação:**
+   ```bash
+   ./mvnw javafx:run
+   ```
+   (No Windows CMD: `.\mvnw.cmd javafx:run`)
+
+2. **Na interface gráfica:**
+   - Clique no botão **"Abrir Arquivo"**
+   - Navegue até a pasta `Maquina_virtual/`
+   - Selecione o arquivo **`gera.obj`**
+   - Clique no botão **"Executar"**
+
+3. **Durante a execução, você precisará fornecer 3 entradas:**
+   
+   **Entrada 1:** (Primeira janela de diálogo)
+   - O programa pedirá um número inteiro
+   - **Exemplo:** Digite `5` e clique OK
+   - ⚠️ **Importante:** Este valor deve ser **menor que 10** para que o programa continue corretamente
+   
+   **Entrada 2:** (Segunda janela de diálogo)
+   - O programa pedirá outro número inteiro
+   - **Exemplo:** Digite `3` e clique OK
+   
+   **Entrada 3:** (Terceira janela de diálogo)
+   - O programa pedirá mais um número inteiro
+   - **Exemplo:** Digite `7` e clique OK
+
+4. **Resultado esperado:**
+   - O programa irá somar os dois últimos valores inseridos
+   - **Saída esperada:** Se você inseriu `3` e `7`, a saída será `10`
+   - A saída aparecerá na área de texto inferior da interface
+
+#### **Método 2: Via Teste Automatizado**
+
+Para verificar apenas se o arquivo carrega corretamente (sem executar completamente):
+
+```bash
+./mvnw test -Dtest=VirtualMachineTest#testGera_ComplexFullTest
+```
+
+⚠️ **Nota:** Este teste apenas valida a estrutura do arquivo, não executa completamente devido às entradas necessárias.
+
+#### **Método 3: Via Linha de Comando (Limitado)**
+
+O arquivo `gera.obj` requer entrada interativa, então não pode ser testado completamente via linha de comando sem interface gráfica. A instrução `RD` abre diálogos JavaFX que precisam de interação do usuário.
+
+#### **Entendendo o que o programa faz:**
+
+1. **Função principal (rótulo 1):** Chama a função 2
+2. **Função 2:** Chama a função 3 e imprime um resultado intermediário
+3. **Função 3:** Chama a função 5 e depois soma dois valores
+4. **Função 5:** Lê um valor (Entrada 1), verifica se é < 10, e se sim, chama função 4
+5. **Função 4:** Lê dois valores (Entrada 2 e Entrada 3) e retorna
+6. **Resultado final:** Soma dos valores das Entradas 2 e 3
+
+#### **Exemplo de Teste Completo:**
+
+- **Entrada 1:** `5` (deve ser < 10)
+- **Entrada 2:** `10`
+- **Entrada 3:** `20`
+- **Saída esperada:** `30` (soma de 10 + 20)
+
+#### **Troubleshooting:**
+
+- ❌ **Se aparecer erro sobre entrada cancelada:** Certifique-se de clicar OK em todas as janelas de diálogo
+- ❌ **Se não aparecer saída:** Verifique o console para mensagens de erro
+- ⚠️ **Se a primeira entrada for ≥ 10:** O programa não chamará a função 4, e a saída pode ser diferente
+
 ### ⚠️ Nota sobre Instrução RD
 
 A instrução `RD` (Read) abre uma caixa de diálogo JavaFX para entrada do usuário. 
@@ -115,7 +186,6 @@ O projeto inclui testes JUnit automatizados para validar o funcionamento da VM.
 ### Executando os Testes
 
 ```bash
-cd Maquina_virtual
 ./mvnw test
 ```
 
