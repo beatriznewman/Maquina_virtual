@@ -141,8 +141,6 @@ BUILD SUCCESS
 
 ## 🔧 Correções Implementadas
 
-A VM foi corrigida e validada para funcionar igual à implementação de referência do repositório [EduardoPerucello/VM-Compiladores](https://github.com/EduardoPerucello/VM-Compiladores).
-
 ### Correções Realizadas:
 
 - ✅ **INV** - Corrigido (faz pop, nega e push ao invés de modificar diretamente)
