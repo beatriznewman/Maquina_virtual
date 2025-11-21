@@ -33,3 +33,47 @@
     -fx-background-color: #bcdffb;   /* azul pastel clarinho */
     -fx-cursor: hand;
 }
+
+.saida-dados {
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 14px;
+    
+    /* Fundo branco ativo */
+    -fx-control-inner-background: #ffffff;
+    -fx-background-color: #ffffff;
+    
+    /* Texto escuro legível */
+    -fx-text-fill: #2d2d2d;
+    
+    /* Borda sutil */
+    -fx-border-color: #cccccc;
+    -fx-border-width: 1px;
+    -fx-border-radius: 4px;
+    -fx-background-radius: 4px;
+    
+    /* Padding interno */
+    -fx-padding: 8px;
+}
+
+/* Scroll customizado */
+.saida-dados .scroll-pane {
+    -fx-background-color: #ffffff;
+}
+
+.saida-dados .scroll-pane .viewport {
+    -fx-background-color: #ffffff;
+}
+
+.saida-dados .scroll-bar .thumb {
+    -fx-background-color: #c0c0c0;
+    -fx-background-radius: 4px;
+}
+
+.saida-dados .scroll-bar .thumb:hover {
+    -fx-background-color: #a0a0a0;
+}
+
+/* Garante que scroll funcione */
+.saida-dados:disabled {
+    -fx-opacity: 1.0;
+}

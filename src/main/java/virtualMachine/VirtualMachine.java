@@ -17,7 +17,6 @@ public class VirtualMachine {
 
     private String saida;
 
-    private final int STACK_OFFSET = 100;
     private final boolean DEBUG = false;
     private final long STEP_LIMIT = 1_000_000L;
 
@@ -115,62 +114,45 @@ public class VirtualMachine {
         }
     }
 
-    // principal: analisa o .obj e executa, seguindo exatamente a semântica do Python
+    // principal: analisa o .obj e executa
     public void analisaObj() {
         try {
             saida = "";
             List<LinhaVM> linhas = listaLinhas();
 
-            // Construir program (P) compactado e tabela de rótulos compatível com Python
+            // Construir program (P) compactado e tabela de rótulos
             List<Instr> program = new ArrayList<>();
-            Map<String, Integer> labels = new HashMap<>(); // rotulo -> indice em program
+            Map<String, Integer> labels = new HashMap<>();
 
-            // Primeiro pass: quando encontramos uma linha com rótulo, registramos
-            // mas em Python o label aponta para o índice do comando recém-adicionado.
-            // Para simular, percorremos e, para cada linha:
             for (int idx = 0; idx < linhas.size(); idx++) {
                 LinhaVM l = linhas.get(idx);
                 String rot = (l.getRotulo() == null ? "" : l.getRotulo().trim());
                 String op = (l.getInstrucao() == null ? "" : l.getInstrucao().trim().toUpperCase());
 
-                // Se linha contiver uma instrução válida (não vazia), adicionamos e
-                // depois, se havia rótulo, o rótulo aponta para índice do comando recém-adicionado.
                 if (!op.isEmpty()) {
-                    // se havia rótulo antes da instrução (linha pode ter rotulo + instr),
-                    // então atribuimos o rótulo ao índice que será gerado.
                     if (!rot.isEmpty()) {
-                        // o rótulo deve apontar para o índice que o próximo push vai gerar,
-                        // mas pode haver casos em que a linha tenha rotulo E instr; neste caso:
-                        // queremos que rotulo aponte para este instr (que ainda não foi adicionado),
-                        // então definimos labels[rot] = program.size() (índice futuro).
                         labels.put(rot, program.size());
                     }
-
-                    // adiciona a instrução ao program
                     program.add(new Instr(op, l.getVar1(), l.getVar2()));
                 } else {
-                    // linha sem instrução mas com rótulo: por convenção do Python o rotulo
-                    // deve apontar para a próxima instrução; então guardamos agora esse rotulo
-                    // apontando para o índice futuro (program.size()).
                     if (!rot.isEmpty()) {
                         labels.put(rot, program.size());
                     }
                 }
             }
 
-            // Agora temos 'program' e 'labels' que espelham a estrutura do Python.
-            // Inicializar memória e pilha
+            // *** CORREÇÃO 1: Inicializar memória com tamanho inicial pequeno ***
             memoria = new ArrayList<>();
             s = -1;
-            ensureMemorySize(2000); // mesmo comportamento do Python original (2000 posições)
+            // Não pré-alocar 2000 posições - crescer sob demanda
 
             long steps = 0;
             boolean executando = true;
 
-            int i = 0; // índice em 'program' (sem linhas NULL)
+            int i = 0;
             while (i < program.size() && executando) {
                 if (++steps > STEP_LIMIT) {
-                    System.out.println("Limite de passos excedido (" + STEP_LIMIT + "). Possível loop infinito.");
+                    System.out.println("Limite de passos excedido (" + STEP_LIMIT + "). Possivel loop infinito.");
                     break;
                 }
 
@@ -183,8 +165,7 @@ public class VirtualMachine {
                     System.out.printf("[DEBUG] i=%d op=%s a=%s b=%s s=%d\n", i, op, a, b, s);
                 }
 
-                int i_anterior = i; // para decidir incremento automático (igual ao step() Python)
-                // execute
+                int i_anterior = i;
                 switch (op) {
                     case "START":
                         s = -1;
@@ -192,20 +173,24 @@ public class VirtualMachine {
 
                     case "HLT":
                         executando = false;
-                        this.guiPrintln("\nExecução terminada (HLT).");
+                        this.guiPrintln("\nExecucao terminada (HLT).");
                         break;
 
                     case "ALLOC": {
                         int m = paramVal(a);
                         int n = paramVal(b);
-                        // copia valores da memória para a pilha (igual Python) — NÃO zera memória
+                        
+                        // ALLOC salva valores existentes de M[m..m+n-1] na pilha
                         for (int k = 0; k < n; k++) {
                             this.s += 1;
-                            ensureMemorySize(this.s);
-                            // leitura segura de memoria m+k
-                            ensureMemorySize(m + k);
-                            // armazenar como valor (mesma lógica do Python que guarda strings, aqui usamos int)
-                            memoria.set(this.s, new Memoria(this.s, memoria.get(m + k).getValor()));
+                            ensureMemorySize(this.s);  // Só garante espaço no topo da pilha
+                            
+                            // Se M[m+k] já existe, copia; senão usa 0 (memória não inicializada)
+                            int valorAntigo = 0;
+                            if (m + k < memoria.size()) {
+                                valorAntigo = memoria.get(m + k).getValor();
+                            }
+                            memoria.get(this.s).setValor(valorAntigo);
                         }
                         break;
                     }
@@ -213,11 +198,16 @@ public class VirtualMachine {
                     case "DALLOC": {
                         int m = paramVal(a);
                         int n = paramVal(b);
-                        // copia valores da pilha de volta para a memória (ordem inversa) — igual Python
+                        
+                        // DALLOC restaura valores da pilha para M[m..m+n-1]
                         for (int k = n - 1; k >= 0; k--) {
                             if (this.s < 0) throw new RuntimeException("Stack underflow em DALLOC");
+                            
+                            // Garante que M[m+k] existe antes de escrever
                             ensureMemorySize(m + k);
-                            memoria.set(m + k, new Memoria(m + k, memoria.get(this.s).getValor()));
+                            
+                            int valorPilha = memoria.get(this.s).getValor();
+                            memoria.get(m + k).setValor(valorPilha);
                             this.s -= 1;
                         }
                         break;
@@ -238,7 +228,7 @@ public class VirtualMachine {
                         int addr = paramVal(a);
                         int val = pop();
                         ensureMemorySize(addr);
-                        memoria.set(addr, new Memoria(addr, val));
+                        memoria.get(addr).setValor(val);
                         break;
                     }
 
@@ -268,7 +258,7 @@ public class VirtualMachine {
                     case "JMP": {
                         Integer destino = labels.getOrDefault(a, null);
                         if (destino == null) {
-                            System.out.println("[JMP] rótulo não encontrado: " + a);
+                            System.out.println("[JMP] rotulo nao encontrado: " + a);
                         } else {
                             i = destino;
                         }
@@ -280,7 +270,7 @@ public class VirtualMachine {
                         if (cond == 0) {
                             Integer destino = labels.getOrDefault(a, null);
                             if (destino == null) {
-                                System.out.println("[JMPF] rótulo não encontrado: " + a);
+                                System.out.println("[JMPF] rotulo nao encontrado: " + a);
                             } else {
                                 i = destino;
                             }
@@ -293,8 +283,8 @@ public class VirtualMachine {
                         int ret = i + 1;
                         push(ret);
                         if (target < 0) {
-                            System.out.println("[CALL] rótulo não encontrado: " + a);
-                            pop(); // remove retorno inválido
+                            System.out.println("[CALL] rotulo nao encontrado: " + a);
+                            pop();
                         } else {
                             i = target;
                         }
@@ -309,13 +299,12 @@ public class VirtualMachine {
                     }
 
                     case "RD": {
-                        // Use JavaFX dialog (igual sua versão). Se rodar sem JavaFX, adaptar para Scanner.
                         TextInputDialog dialog = new TextInputDialog("");
                         dialog.setTitle("Entrada");
                         dialog.setHeaderText("Digite um inteiro:");
                         Optional<String> user = dialog.showAndWait();
                         if (user.isEmpty()) {
-                            throw new RuntimeException("Entrada cancelada pelo usuário (RD).");
+                            throw new RuntimeException("Entrada cancelada pelo usuario (RD).");
                         }
                         try {
                             int val = Integer.parseInt(user.get().trim());
@@ -333,42 +322,39 @@ public class VirtualMachine {
                     }
 
                     case "NULL":
-                        // nada
                         break;
 
                     default:
-                        throw new RuntimeException("Instrução inválida: " + op);
-                } // fim switch
+                        throw new RuntimeException("Instrucao invalida: " + op);
+                }
 
-                // se o código não alterou i (saltos, call, return), então incrementa como em Python
                 if (i == i_anterior) {
                     i = i + 1;
                 }
-            } // fim while
+            }
 
-            System.out.println("Execução finalizada. passos=" + steps);
-            System.out.println("Saída final:\n" + saida);
+            System.out.println("Execucao finalizada. passos=" + steps);
+            System.out.println("Saida final:\n" + saida);
 
         } catch (Exception e) {
-            System.out.println("Erro execução: " + e.getMessage());
+            System.out.println("Erro execucao: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // ---------- helpers ----------
-
+    // *** CORREÇÃO 4: ensureMemorySize agora só cresce até o necessário ***
     private void ensureMemorySize(int index) {
         if (index < 0) return;
         while (memoria.size() <= index) {
             int addr = memoria.size();
-            memoria.add(new Memoria(addr, 0));
+            memoria.add(new Memoria(addr, 0)); // Inicializa com 0
         }
     }
 
     private void push(int v) {
         s += 1;
         ensureMemorySize(s);
-        memoria.set(s, new Memoria(s, v));
+        memoria.get(s).setValor(v);
     }
 
     private int pop() {
@@ -378,11 +364,6 @@ public class VirtualMachine {
         int v = memoria.get(s).getValor();
         s -= 1;
         return v;
-    }
-
-    private int top() {
-        if (s < 0) throw new RuntimeException("Top em pilha vazia!");
-        return memoria.get(s).getValor();
     }
 
     private void binOp(Bin op) {
@@ -399,7 +380,6 @@ public class VirtualMachine {
 
     private interface Bin { int apply(int x, int y); }
 
-    // Imprime para a saída (PRN)
     private void guiPrintln(Object o) {
         this.saida += String.valueOf(o) + "\n";
         System.out.println(o);
